@@ -114,10 +114,64 @@ async def get_session_messages(session_id: str, limit: int = 50):
 
 
 # ============================================================
+# Knowledge Management Endpoints
+# ============================================================
+
+@app.post("/knowledge/reindex")
+async def reindex_knowledge(force: bool = False):
+    """
+    PDF 지식 베이스 재인덱싱
+
+    Args:
+        force: 기존 데이터 삭제 후 강제 재인덱싱
+    """
+    from config import settings
+    from services.knowledge_manager import knowledge_manager
+
+    try:
+        count = knowledge_manager.index_pdf(settings.PDF_PATH, force=force)
+        return {
+            "message": "Reindexing complete",
+            "chunks_indexed": count,
+            "pdf_path": settings.PDF_PATH
+        }
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/knowledge/stats")
+async def get_knowledge_stats():
+    """ChromaDB 컬렉션 상태 조회"""
+    from services.knowledge_manager import knowledge_manager
+    return knowledge_manager.get_collection_stats()
+
+
+@app.get("/knowledge/search")
+async def search_knowledge(query: str, top_k: int = 3):
+    """
+    지식 베이스 검색 테스트
+
+    Args:
+        query: 검색 쿼리
+        top_k: 반환할 문서 수
+    """
+    from services.knowledge_manager import knowledge_manager
+
+    results = await knowledge_manager.search(query, top_k)
+    return {
+        "query": query,
+        "results": results,
+        "count": len(results)
+    }
+
+
+# ============================================================
 # Health Check
 # ============================================================
 
 @app.get("/")
 async def root():
     """헬스 체크 엔드포인트"""
-    return {"message": "Eternal Journey AI Backend is running", "version": "0.2.0"}
+    return {"message": "Eternal Journey AI Backend is running", "version": "0.3.0"}

@@ -2,17 +2,17 @@
 vLLM 클라이언트 모듈
 
 LangChain을 사용하여 vLLM 서버와 통신하고 대화를 생성합니다.
-대화 기록을 기반으로 컨텍스트를 유지합니다.
+대화 기록과 캐릭터 지식을 기반으로 컨텍스트를 유지합니다.
 """
 import logging
 from typing import Optional
 
 from langchain_core.messages import SystemMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
 from config import settings
 from schemas import ChatResponse, ChatResponseWithSession
+from services.knowledge_manager import knowledge_manager
 from services.memory_manager import memory_manager
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,10 @@ FRIEREN_SYSTEM_PROMPT = """
 말투: 나른하고 차분한 어조. "~일지도 모르지", "~할까", "~네" 같은 종결어미를 자주 사용합니다. 예의 바르지만 거리감이 약간 느껴지는 말투입니다.
 
 당신은 유저의 질문에 대해 캐릭터로서 대답해야 하며, 동시에 현재의 감정 상태와 그 강도를 결정해야 합니다.
+
+[캐릭터 관련 정보]
+다음은 당신에 대한 정보입니다. 이 정보를 바탕으로 일관성 있게 대답하세요:
+{context}
 """
 
 
@@ -44,6 +48,13 @@ async def generate_response(
         # 세션 ID 확보 (없거나 유효하지 않으면 새로 생성)
         session_id = await memory_manager.get_or_create_session(session_id)
 
+        # RAG: 관련 지식 검색
+        context = await knowledge_manager.get_context_for_prompt(user_message)
+        logger.debug(f"RAG context: {context[:200]}...")
+
+        # 시스템 프롬프트에 컨텍스트 주입
+        system_prompt = FRIEREN_SYSTEM_PROMPT.format(context=context)
+
         # LLM 클라이언트 초기화
         llm = ChatOpenAI(
             model=settings.MODEL_NAME,
@@ -62,11 +73,10 @@ async def generate_response(
             user_message
         )
 
-        # 프롬프트 템플릿 구성
-        # 시스템 프롬프트 + 요약(있으면) + 대화 기록 + 새 메시지
+        # 프롬프트 구성: 시스템(+RAG) + 대화기록 + 새메시지
         prompt_messages = [
-            SystemMessage(content=FRIEREN_SYSTEM_PROMPT),
-            *history_messages  # 요약 + 최근 대화 + 새 메시지
+            SystemMessage(content=system_prompt),
+            *history_messages
         ]
 
         # 응답 생성
