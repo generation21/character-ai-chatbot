@@ -1,0 +1,22 @@
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    volumes:
+      - ./backend/models:/models
+    ports:
+      - "8000:8000"
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      --model /models/llm/Qwen3-4B-Instruct-2507
+      --enable-lora
+      --lora-modules frieren-lora=/models/llm/frieren-lora-adapter
+      --max-model-len 16384
+      --gpu-memory-utilization 0.5

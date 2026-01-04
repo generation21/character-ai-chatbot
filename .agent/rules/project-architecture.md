@@ -14,12 +14,14 @@ character-chatbot-ai/
 │   │   └── services/       # vLLM, ComfyUI, TTS API 연동부
 │   ├── data/               # RAG용 지식 베이스
 │   ├── vector_db/          # ChromaDB 저장소
-│   └── models/             # 거대 모델 가중치 (LLM, SDXL, TTS)
-│       ├── llm/
-│       ├── diffusers/
-│       └── tts/
 ├── frontend/               # Streamlit 프론트엔드
 │   └── app.py
 │
-│── data-pipelines          # 데이터 생성 및 데이터 처리
-└── docker-compose.yml      # 전체 서비스 오케스트레이션
+├── data-pipelines          # 데이터 생성 및 데이터 처리
+├── docker-compose.yml      # 전체 서비스 오케스트레이션
+├── models/
+│   ├── llm/                # Qwen3-4B-Instruct (SFT/DPO 완료된 모델)
+│   ├── comfy/          # SDXL/Z-Image-Turbo 베이스 모델
+│   │   ├── checkpoints/    # .safetensors 파일
+│   │   └── loras/          # 프리렌 LoRA 파일
+│   └── tts/                # GPT-SoVITS 학습 결과물 (.pth, .index)

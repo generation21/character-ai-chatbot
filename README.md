@@ -35,6 +35,18 @@ uv run uvicorn backend.main:app --reload
 
 데이터 생성 스크립트는 `data-pipelines/` 디렉토리에 있습니다. 자세한 내용은 [`data-pipelines/README.md`](data-pipelines/README.md)를 참고하세요.
 
+# vLLM 서버 실행
+```bash
+python -m vllm.entrypoints.openai.api_server \
+    --model ./models/llm/Qwen3-4B-Instruct-2507 \
+    --enable-lora \
+    --lora-modules frieren-lora=./models/llm/frieren-lora-adapter \
+    --max-lora-rank 64 \
+    --gpu-memory-utilization 0.5 \
+    --max-model-len 16384 \
+    --port 8000
+```
+
 ```bash
 # 데이터 생성 스크립트 실행
 cd data-pipelines
