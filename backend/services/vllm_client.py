@@ -4,6 +4,7 @@ vLLM 클라이언트 모듈
 LangChain을 사용하여 vLLM 서버와 통신하고 대화를 생성합니다.
 대화 기록과 캐릭터 지식을 기반으로 컨텍스트를 유지합니다.
 """
+import asyncio
 import logging
 from typing import Optional
 
@@ -11,11 +12,13 @@ from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 
 from config import settings
-from schemas import (ChatResponse, ChatResponseWithImage, ChatResponseWithSession, ImageGenerationResult)
+from schemas import (AudioGenerationResult, ChatResponse, ChatResponseWithImage, ChatResponseWithMedia,
+                     ChatResponseWithSession, ImageGenerationResult)
 from services.comfyui_client import comfyui_client
 from services.image_prompt_generator import generate_image_prompt
 from services.knowledge_manager import knowledge_manager
 from services.memory_manager import memory_manager
+from services.tts_client import tts_client
 
 logger = logging.getLogger(__name__)
 
@@ -148,3 +151,95 @@ async def generate_response_with_image(user_message: str,
                                  saturation_tag=base_response.saturation_tag,
                                  session_id=base_response.session_id,
                                  image=image_result)
+
+
+async def generate_response_with_media(user_message: str,
+                                       session_id: Optional[str] = None,
+                                       enable_image: bool = True,
+                                       enable_audio: bool = True) -> ChatResponseWithMedia:
+    """
+    대화 응답 생성 + 이미지 + 음성 병렬 생성
+
+    Args:
+        user_message: 사용자 메시지
+        session_id: 세션 ID (없으면 새로 생성)
+        enable_image: 이미지 생성 활성화 여부
+        enable_audio: 음성 생성 활성화 여부
+
+    Returns:
+        ChatResponseWithMedia: 응답, 세션 ID, 이미지 결과, 음성 결과
+    """
+    # 기본 대화 응답 생성
+    base_response = await generate_response(user_message, session_id)
+
+    image_result: Optional[ImageGenerationResult] = None
+    audio_result: Optional[AudioGenerationResult] = None
+
+    async def generate_image_task() -> Optional[ImageGenerationResult]:
+        """이미지 생성 태스크"""
+        if not enable_image:
+            return None
+        try:
+            is_connected = await comfyui_client.check_connection()
+            if not is_connected:
+                logger.warning("ComfyUI server not available, skipping image generation")
+                return None
+
+            image_prompt = await generate_image_prompt(conversation_context=base_response.response,
+                                                       emotion_tag=base_response.emotion_tag,
+                                                       saturation_tag=base_response.saturation_tag)
+            logger.info(f"Generated image prompt: {image_prompt}")
+
+            filename, seed = await comfyui_client.queue_prompt(additional_tags=image_prompt)
+            return ImageGenerationResult(filename=filename, seed=seed)
+        except Exception as e:
+            logger.error(f"Image generation failed: {e}")
+            return None
+
+    async def generate_audio_task() -> Optional[AudioGenerationResult]:
+        """음성 생성 태스크"""
+        if not enable_audio:
+            return None
+        try:
+            is_connected = await tts_client.check_connection()
+            if not is_connected:
+                logger.warning("TTS server not available, skipping audio generation")
+                return None
+
+            # 감정 태그를 사용하여 적절한 참조 오디오 선택
+            emotion = base_response.emotion_tag or "neutral"
+            filename, filepath = await tts_client.generate_audio(
+                text=base_response.response,
+                emotion=emotion,
+                text_lang="ja"  # 프리렌은 일본어 캐릭터
+            )
+            return AudioGenerationResult(filename=filename, filepath=str(filepath))
+        except Exception as e:
+            logger.error(f"Audio generation failed: {e}")
+            return None
+
+    # 이미지와 음성 병렬 생성
+    results = await asyncio.gather(generate_image_task(), generate_audio_task(), return_exceptions=True)
+
+    # 결과 처리
+    if not isinstance(results[0], Exception):
+        image_result = results[0]
+    else:
+        logger.error(f"Image task exception: {results[0]}")
+
+    if not isinstance(results[1], Exception):
+        audio_result = results[1]
+    else:
+        logger.error(f"Audio task exception: {results[1]}")
+
+    if image_result:
+        logger.info(f"Image generated: {image_result.filename}")
+    if audio_result:
+        logger.info(f"Audio generated: {audio_result.filename}")
+
+    return ChatResponseWithMedia(response=base_response.response,
+                                 emotion_tag=base_response.emotion_tag,
+                                 saturation_tag=base_response.saturation_tag,
+                                 session_id=base_response.session_id,
+                                 image=image_result,
+                                 audio=audio_result)

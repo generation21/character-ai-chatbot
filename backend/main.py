@@ -8,10 +8,10 @@ FastAPI 기반 백엔드 서버
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from schemas import (ChatRequest, ChatResponseWithImage, ChatResponseWithSession, SessionInfo, SessionListResponse,
-                     SessionMessagesResponse)
+from schemas import (ChatRequest, ChatResponseWithImage, ChatResponseWithMedia, ChatResponseWithSession, SessionInfo,
+                     SessionListResponse, SessionMessagesResponse)
 from services.session_manager import session_manager
-from services.vllm_client import (generate_response, generate_response_with_image)
+from services.vllm_client import (generate_response, generate_response_with_image, generate_response_with_media)
 
 app = FastAPI(title="Frieren Chatbot API", description="프리렌 캐릭터 AI 챗봇 API - 대화 기록 관리 포함", version="0.2.0")
 
@@ -53,6 +53,19 @@ async def chat_with_image(request: ChatRequest):
     - ComfyUI 서버가 없으면 이미지 없이 대화만 반환
     """
     response = await generate_response_with_image(request.message, request.session_id)
+    return response
+
+
+@app.post("/chat-with-media", response_model=ChatResponseWithMedia)
+async def chat_with_media(request: ChatRequest):
+    """
+    대화 + 이미지 + 음성 생성 엔드포인트
+
+    - 대화 응답 생성 후 이미지와 음성을 병렬로 생성
+    - ComfyUI(이미지) + GPT-SoVITS(음성) 동시 호출
+    - 일부 서버가 없어도 graceful degradation
+    """
+    response = await generate_response_with_media(request.message, request.session_id)
     return response
 
 

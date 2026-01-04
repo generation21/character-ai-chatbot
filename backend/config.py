@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     COMFYUI_WORKFLOW_PATH: str = "./data/comfyui_workflow/sdxl_api.json"
     COMFYUI_OUTPUT_DIR: str = "./data/generated_images"
 
+    # GPT-SoVITS TTS settings
+    TTS_API_URL: str = "http://localhost:9880"
+    TTS_MODEL_DIR: str = "../models/tts/v4"
+    TTS_GPT_WEIGHTS: str = "frieren_gpt_v4.ckpt"
+    TTS_SOVITS_WEIGHTS: str = "frieren_sovits_v4.pth"
+    TTS_REF_AUDIO_DIR: str = "../models/tts/ref_audio"
+    TTS_DEFAULT_REF_AUDIO: str = "default_jp.wav"
+    TTS_DEFAULT_PROMPT_TEXT: str = ""  # Will be loaded from .txt file
+    TTS_DEFAULT_LANG: str = "ja"
+    TTS_OUTPUT_DIR: str = "./data/generated_audio"
+
     class Config:
         env_file = ".env"
 

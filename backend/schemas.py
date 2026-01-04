@@ -33,10 +33,22 @@ class ImageGenerationResult(BaseModel):
     seed: int = Field(description="Seed used for generation")
 
 
+class AudioGenerationResult(BaseModel):
+    """TTS 음성 생성 결과"""
+    filename: str = Field(description="Generated audio filename")
+    filepath: str = Field(description="Path to the generated audio file")
+
+
 class ChatResponseWithImage(ChatResponseWithSession):
     """이미지가 포함된 대화 응답"""
     image: Optional[ImageGenerationResult] = Field(
         None, description="Generated image result, None if image generation failed or disabled")
+
+
+class ChatResponseWithMedia(ChatResponseWithSession):
+    """이미지 + 음성이 포함된 대화 응답"""
+    image: Optional[ImageGenerationResult] = Field(None, description="Generated image result")
+    audio: Optional[AudioGenerationResult] = Field(None, description="Generated audio result")
 
 
 class SessionInfo(BaseModel):
