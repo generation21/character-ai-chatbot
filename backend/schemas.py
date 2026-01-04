@@ -22,6 +22,23 @@ class ChatResponseWithSession(ChatResponse):
     session_id: str = Field(description="The session ID for this conversation")
 
 
+class ImagePromptResponse(BaseModel):
+    """SDXL 프롬프트 생성 결과"""
+    positive_prompt: str = Field(description="Generated SDXL positive prompt tags")
+
+
+class ImageGenerationResult(BaseModel):
+    """이미지 생성 결과"""
+    filename: str = Field(description="Generated image filename")
+    seed: int = Field(description="Seed used for generation")
+
+
+class ChatResponseWithImage(ChatResponseWithSession):
+    """이미지가 포함된 대화 응답"""
+    image: Optional[ImageGenerationResult] = Field(
+        None, description="Generated image result, None if image generation failed or disabled")
+
+
 class SessionInfo(BaseModel):
     """Session information for listing and management"""
     session_id: str

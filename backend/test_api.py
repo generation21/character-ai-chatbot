@@ -11,15 +11,14 @@ import httpx
 
 from config import settings
 from schemas import ChatResponse
+from services.comfyui_client import ComfyUIClient, comfyui_client
+from services.image_prompt_generator import generate_image_prompt
 from services.memory_manager import memory_manager
 from services.session_manager import session_manager
 from services.vllm_client import generate_response
 
 # 로깅 설정
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -101,19 +100,15 @@ async def test_memory_manager() -> bool:
         logger.info(f"✅ 유효하지 않은 세션 시 새 세션 생성: {new_session}")
 
         # 4. 대화 턴 저장
-        await memory_manager.save_conversation_turn(
-            session_id=session_id,
-            user_message="테스트 메시지",
-            ai_response="테스트 응답",
-            emotion_tag="neutral",
-            saturation_tag="0.5"
-        )
+        await memory_manager.save_conversation_turn(session_id=session_id,
+                                                    user_message="테스트 메시지",
+                                                    ai_response="테스트 응답",
+                                                    emotion_tag="neutral",
+                                                    saturation_tag="0.5")
         logger.info("✅ 대화 턴 저장 완료")
 
         # 5. 프롬프트 메시지 구성 테스트
-        prompt_messages = await memory_manager.build_prompt_messages(
-            session_id, "새 메시지"
-        )
+        prompt_messages = await memory_manager.build_prompt_messages(session_id, "새 메시지")
         logger.info(f"✅ 프롬프트 메시지 구성: {len(prompt_messages)}개")
 
         # 정리
@@ -186,6 +181,117 @@ async def test_generate_response_with_session() -> bool:
         return False
 
 
+async def test_comfyui_client() -> bool:
+    """
+    ComfyUI 클라이언트 테스트
+    - 워크플로우 로드
+    - 프롬프트 준비 (변수 치환)
+    - 서버 연결 확인
+    """
+    logger.info("\n🧪 ComfyUI 클라이언트 테스트 시작...")
+
+    try:
+        # 1. 클라이언트 초기화 및 워크플로우 로드
+        client = ComfyUIClient()
+        assert client.workflow is not None, "워크플로우가 로드되어야 합니다"
+        logger.info("✅ 워크플로우 로드 성공")
+
+        # 2. 프롬프트 준비 테스트
+        test_tags = "sitting, reading book, calm expression"
+        prompt, seed, filename = client._prepare_prompt(test_tags)
+
+        # 변수 치환 확인
+        assert isinstance(seed, int), "seed는 정수여야 합니다"
+        assert filename.startswith("frieren_"), "filename은 'frieren_'로 시작해야 합니다"
+        logger.info(f"✅ 프롬프트 준비: filename={filename}, seed={seed}")
+
+        # 3. JSON 내 변수 치환 확인
+        import json
+        prompt_str = json.dumps(prompt)
+        assert "$positive_prompt" not in prompt_str, "$positive_prompt가 치환되어야 합니다"
+        assert "$seed" not in prompt_str, "$seed가 치환되어야 합니다"
+        assert "$file_name" not in prompt_str, "$file_name이 치환되어야 합니다"
+        logger.info("✅ 변수 치환 확인 완료")
+
+        # 4. base prompt 포함 확인
+        assert "anime screencap" in prompt_str, "Base prompt가 포함되어야 합니다"
+        assert "frieren" in prompt_str, "'frieren' 키워드가 포함되어야 합니다"
+        assert test_tags in prompt_str, "추가 태그가 포함되어야 합니다"
+        logger.info("✅ 프롬프트 내용 확인 완료")
+
+        # 5. 서버 연결 확인 (선택적)
+        is_connected = await client.check_connection()
+        if is_connected:
+            logger.info("✅ ComfyUI 서버 연결 확인")
+        else:
+            logger.info("⚠️ ComfyUI 서버 미연결 (선택적)")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ ComfyUI 클라이언트 테스트 실패: {e}")
+        return False
+
+
+async def test_image_prompt_generator() -> bool:
+    """
+    이미지 프롬프트 생성기 테스트 (vLLM 필요)
+    """
+    logger.info("\n🧪 이미지 프롬프트 생성기 테스트 시작...")
+
+    try:
+        # 테스트 케이스들
+        test_cases = [{
+            "context": "그렇네... 바람이 시원해서 좋은 날씨일지도 모르지.",
+            "emotion": "neutral",
+            "saturation": "0.3"
+        }, {
+            "context": "하이터와 함께한 여행은... 좋은 추억이야.",
+            "emotion": "happy",
+            "saturation": "0.6"
+        }, {
+            "context": "히멜이... 떠나버렸네.",
+            "emotion": "sad",
+            "saturation": "0.8"
+        }]
+
+        for i, case in enumerate(test_cases, 1):
+            prompt = await generate_image_prompt(conversation_context=case["context"],
+                                                 emotion_tag=case["emotion"],
+                                                 saturation_tag=case["saturation"])
+
+            assert isinstance(prompt, str), "프롬프트는 문자열이어야 합니다"
+            assert len(prompt) > 0, "프롬프트가 비어있으면 안됩니다"
+            logger.info(f"✅ 테스트 케이스 {i}: {case['emotion']}")
+            logger.info(f"   프롬프트: {prompt[:80]}..." if len(prompt) > 80 else f"   프롬프트: {prompt}")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ 이미지 프롬프트 생성기 테스트 실패: {e}")
+        return False
+
+
+async def test_comfyui_connection() -> bool:
+    """ComfyUI 서버 연결 테스트"""
+    logger.info(f"\n🔗 ComfyUI 서버 연결 테스트... ({settings.COMFYUI_API_URL})")
+
+    try:
+        is_connected = await comfyui_client.check_connection()
+
+        if is_connected:
+            logger.info("✅ ComfyUI 서버 연결 성공!")
+            return True
+        else:
+            logger.warning("⚠️ ComfyUI 서버에 연결할 수 없습니다")
+            logger.info("💡 ComfyUI 서버가 실행 중이 아니면 이미지 생성 테스트를 건너뜁니다.")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ 연결 테스트 중 오류: {e}")
+        return False
+
+
 async def run_all_tests() -> None:
     """모든 테스트 실행"""
     logger.info("=" * 60)
@@ -213,6 +319,20 @@ async def run_all_tests() -> None:
     else:
         logger.info("\n⏭️ vLLM 서버 미연결로 generate_response 테스트 건너뜀")
         results["generate_response"] = None
+
+    # 5. 이미지 생성 관련 테스트
+    results["ComfyUI 클라이언트"] = await test_comfyui_client()
+
+    # 6. ComfyUI 서버 연결 테스트
+    comfyui_connected = await test_comfyui_connection()
+    results["ComfyUI 서버 연결"] = comfyui_connected
+
+    # 7. 이미지 프롬프트 생성기 테스트 (vLLM 필요)
+    if vllm_connected:
+        results["이미지 프롬프트 생성기"] = await test_image_prompt_generator()
+    else:
+        logger.info("\n⏭️ vLLM 서버 미연결로 이미지 프롬프트 생성기 테스트 건너뜀")
+        results["이미지 프롬프트 생성기"] = None
 
     # 결과 요약
     logger.info("\n" + "=" * 60)

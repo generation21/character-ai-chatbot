@@ -11,7 +11,9 @@ from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 
 from config import settings
-from schemas import ChatResponse, ChatResponseWithSession
+from schemas import (ChatResponse, ChatResponseWithImage, ChatResponseWithSession, ImageGenerationResult)
+from services.comfyui_client import comfyui_client
+from services.image_prompt_generator import generate_image_prompt
 from services.knowledge_manager import knowledge_manager
 from services.memory_manager import memory_manager
 
@@ -30,10 +32,7 @@ FRIEREN_SYSTEM_PROMPT = """
 """
 
 
-async def generate_response(
-    user_message: str,
-    session_id: Optional[str] = None
-) -> ChatResponseWithSession:
+async def generate_response(user_message: str, session_id: Optional[str] = None) -> ChatResponseWithSession:
     """
     대화 응답 생성
 
@@ -68,36 +67,26 @@ async def generate_response(
         structured_llm = llm.with_structured_output(ChatResponse)
 
         # 대화 기록 포함한 메시지 구성
-        history_messages = await memory_manager.build_prompt_messages(
-            session_id,
-            user_message
-        )
+        history_messages = await memory_manager.build_prompt_messages(session_id, user_message)
 
         # 프롬프트 구성: 시스템(+RAG) + 대화기록 + 새메시지
-        prompt_messages = [
-            SystemMessage(content=system_prompt),
-            *history_messages
-        ]
+        prompt_messages = [SystemMessage(content=system_prompt), *history_messages]
 
         # 응답 생성
         response: ChatResponse = await structured_llm.ainvoke(prompt_messages)
 
         # 대화 턴 저장
-        await memory_manager.save_conversation_turn(
-            session_id=session_id,
-            user_message=user_message,
-            ai_response=response.response,
-            emotion_tag=response.emotion_tag,
-            saturation_tag=response.saturation_tag
-        )
+        await memory_manager.save_conversation_turn(session_id=session_id,
+                                                    user_message=user_message,
+                                                    ai_response=response.response,
+                                                    emotion_tag=response.emotion_tag,
+                                                    saturation_tag=response.saturation_tag)
 
         # 세션 ID 포함한 응답 반환
-        return ChatResponseWithSession(
-            response=response.response,
-            emotion_tag=response.emotion_tag,
-            saturation_tag=response.saturation_tag,
-            session_id=session_id
-        )
+        return ChatResponseWithSession(response=response.response,
+                                       emotion_tag=response.emotion_tag,
+                                       saturation_tag=response.saturation_tag,
+                                       session_id=session_id)
 
     except Exception as e:
         logger.error(f"LangChain Error: {e}")
@@ -105,9 +94,57 @@ async def generate_response(
         if session_id is None:
             session_id = await memory_manager.get_or_create_session(None)
 
-        return ChatResponseWithSession(
-            response="음... 마법이 실패한 것 같아. 다시 시도해볼까?",
-            emotion_tag="neutral",
-            saturation_tag="0.1",
-            session_id=session_id
-        )
+        return ChatResponseWithSession(response="음... 마법이 실패한 것 같아. 다시 시도해볼까?",
+                                       emotion_tag="neutral",
+                                       saturation_tag="0.1",
+                                       session_id=session_id)
+
+
+async def generate_response_with_image(user_message: str,
+                                       session_id: Optional[str] = None,
+                                       enable_image: bool = True) -> ChatResponseWithImage:
+    """
+    대화 응답 생성 + 이미지 생성
+
+    Args:
+        user_message: 사용자 메시지
+        session_id: 세션 ID (없으면 새로 생성)
+        enable_image: 이미지 생성 활성화 여부
+
+    Returns:
+        ChatResponseWithImage: 응답, 세션 ID, 이미지 결과
+    """
+    # 기본 대화 응답 생성
+    base_response = await generate_response(user_message, session_id)
+
+    image_result: Optional[ImageGenerationResult] = None
+
+    if enable_image:
+        try:
+            # ComfyUI 연결 확인
+            is_connected = await comfyui_client.check_connection()
+            if not is_connected:
+                logger.warning("ComfyUI server not available, skipping image generation")
+            else:
+                # 이미지 프롬프트 생성
+                image_prompt = await generate_image_prompt(conversation_context=base_response.response,
+                                                           emotion_tag=base_response.emotion_tag,
+                                                           saturation_tag=base_response.saturation_tag)
+
+                logger.info(f"Generated image prompt: {image_prompt}")
+
+                # ComfyUI로 이미지 생성
+                filename, seed = await comfyui_client.queue_prompt(additional_tags=image_prompt)
+
+                image_result = ImageGenerationResult(filename=filename, seed=seed)
+                logger.info(f"Image generated: {filename} (seed: {seed})")
+
+        except Exception as e:
+            logger.error(f"Image generation failed: {e}")
+            # 이미지 생성 실패해도 대화 응답은 정상 반환
+
+    return ChatResponseWithImage(response=base_response.response,
+                                 emotion_tag=base_response.emotion_tag,
+                                 saturation_tag=base_response.saturation_tag,
+                                 session_id=base_response.session_id,
+                                 image=image_result)

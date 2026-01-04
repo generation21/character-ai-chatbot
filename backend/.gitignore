@@ -216,3 +216,5 @@ __marimo__/
 .streamlit/secrets.toml
 
 data/chat_history.db
+
+GPT-SoVITS

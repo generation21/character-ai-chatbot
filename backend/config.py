@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     VLLM_API_URL: str = "http://localhost:8000/v1"
     MODEL_NAME: str = "./models/llm/Qwen3-4B-Instruct-2507"
@@ -19,7 +20,13 @@ class Settings(BaseSettings):
     RAG_CHUNK_SIZE: int = 500  # 청크 크기 (문자)
     RAG_CHUNK_OVERLAP: int = 50  # 청크 오버랩
 
+    # ComfyUI settings
+    COMFYUI_API_URL: str = "http://localhost:8188"
+    COMFYUI_WORKFLOW_PATH: str = "./data/comfyui_workflow/sdxl_api.json"
+    COMFYUI_OUTPUT_DIR: str = "./data/generated_images"
+
     class Config:
         env_file = ".env"
+
 
 settings = Settings()
